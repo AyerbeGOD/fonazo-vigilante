@@ -1,4 +1,4 @@
-// Revisa que Fonazo responda y avisa por WhatsApp SOLO cuando se cae y cuando vuelve.
+// Revisa que Fonazo responda y avisa por Telegram SOLO cuando se cae y cuando vuelve.
 // Lo ejecuta GitHub Actions cada 5 minutos (.github/workflows/vigilar.yml).
 import fs from 'node:fs';
 
@@ -35,26 +35,39 @@ async function revisar() {
     return { arriba: false, error: ultimoError };
 }
 
-async function whatsapp(texto) {
-    const tel = String(process.env.WHATSAPP_TELEFONO || '').replace(/\D/g, '');
-    const key = String(process.env.WHATSAPP_APIKEY || '').trim();
-    if (!tel || !key) {
-        console.log('::warning::Faltan los secretos WHATSAPP_TELEFONO / WHATSAPP_APIKEY. Mensaje no enviado:\n' + texto);
+// Avisos por Telegram (secretos TELEGRAM_TOKEN y TELEGRAM_CHAT_ID; varios chats separados por coma)
+async function avisar(texto) {
+    const token = String(process.env.TELEGRAM_TOKEN || '').trim();
+    const chats = String(process.env.TELEGRAM_CHAT_ID || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (!token || !chats.length) {
+        console.log('::warning::Faltan los secretos TELEGRAM_TOKEN / TELEGRAM_CHAT_ID. Mensaje no enviado:\n' + texto);
         return false;
     }
-    for (let i = 1; i <= 3; i++) {
-        try {
-            const r = await fetch(`https://api.callmebot.com/whatsapp.php?phone=%2B${tel}&text=${encodeURIComponent(texto)}&apikey=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(20000) });
-            const t = await r.text();
-            if (r.ok && !/error|invalid|not active/i.test(t.slice(0, 500))) return true;
-            console.log(`CallMeBot intento ${i}: HTTP ${r.status}`);
-        } catch (err) {
-            console.log(`CallMeBot intento ${i}: ${err.message}`);
+    const html = texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\*([^*\n]+)\*/g, '<b>$1</b>');
+    let ok = false;
+    for (const chat of chats) {
+        for (let i = 1; i <= 3; i++) {
+            try {
+                const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ chat_id: chat, text: html, parse_mode: 'HTML', disable_web_page_preview: true }),
+                    signal: AbortSignal.timeout(20000),
+                });
+                const j = await r.json().catch(() => ({}));
+                if (j.ok) {
+                    ok = true;
+                    break;
+                }
+                console.log(`Telegram intento ${i}: ${j.description || `HTTP ${r.status}`}`);
+            } catch (err) {
+                console.log(`Telegram intento ${i}: ${err.message}`);
+            }
+            await new Promise((r) => setTimeout(r, 5000 * i));
         }
-        await new Promise((r) => setTimeout(r, 5000 * i));
     }
-    console.log('::error::No se pudo enviar el WhatsApp');
-    return false;
+    if (!ok) console.log('::error::No se pudo enviar el aviso por Telegram');
+    return ok;
 }
 
 const leer = () => {
@@ -74,18 +87,18 @@ console.log(`Fonazo: ${estado}${r.mantenimiento ? ' (en horario de cierre / mant
 
 let nuevo = { ...antes };
 if (prueba) {
-    await whatsapp(`🔴 *PRUEBA de alerta de caída*\nAsí te llegará el aviso si Fonazo se cae.\nMotivo: ${r.error}.\n${hora(ahora)}`);
+    await avisar(`🔴 *PRUEBA de alerta de caída*\nAsí te llegará el aviso si Fonazo se cae.\nMotivo: ${r.error}.\n${hora(ahora)}`);
 } else if (estado !== antes.estado) {
     if (estado === 'caido') {
-        const enviado = await whatsapp(`🔴 *Fonazo CAÍDO*\nLa página no responde desde las ${hora(ahora)} (${r.error}).\nTe aviso cuando vuelva.\n${URL_SALUD.replace('/api/salud', '')}`);
+        const enviado = await avisar(`🔴 *Fonazo CAÍDO*\nLa página no responde desde las ${hora(ahora)} (${r.error}).\nTe aviso cuando vuelva.\n${URL_SALUD.replace('/api/salud', '')}`);
         nuevo = { ...antes, estado, desde: ahora, aviso_enviado: enviado };
     } else {
-        await whatsapp(`🟢 *Fonazo RECUPERADO* (${hora(ahora)})\nEstuvo caído ${duracion(ahora - (antes.desde || ahora))}.`);
+        await avisar(`🟢 *Fonazo RECUPERADO* (${hora(ahora)})\nEstuvo caído ${duracion(ahora - (antes.desde || ahora))}.`);
         nuevo = { latido: antes.latido, estado, desde: ahora };
     }
 } else if (estado === 'caido' && antes.aviso_enviado === false) {
     // Si el primer aviso no salió, se vuelve a intentar
-    nuevo.aviso_enviado = await whatsapp(`🔴 *Fonazo CAÍDO*\nNo responde desde las ${hora(antes.desde)} (${r.error}).`);
+    nuevo.aviso_enviado = await avisar(`🔴 *Fonazo CAÍDO*\nNo responde desde las ${hora(antes.desde)} (${r.error}).`);
 }
 // GitHub apaga los horarios de repos sin actividad en 60 días: un "latido" mensual lo mantiene vivo
 if (!antes.latido || ahora - antes.latido > 30 * 24 * 3600 * 1000) nuevo.latido = ahora;

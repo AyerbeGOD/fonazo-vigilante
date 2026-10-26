@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       prueba:
-        description: 'Enviar una alerta de caída de PRUEBA a tu WhatsApp'
+        description: 'Enviar una alerta de caída de PRUEBA a tu Telegram'
         type: boolean
         default: false
 
@@ -30,8 +30,8 @@ jobs:
         run: node vigilar.mjs
         env:
           FONAZO_URL: https://fonazo-inventario.seenode.app
-          WHATSAPP_TELEFONO: ${{ secrets.WHATSAPP_TELEFONO }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PRUEBA: ${{ inputs.prueba && 'si' || 'no' }}
       - name: Guardar el estado si cambió
         run: |
