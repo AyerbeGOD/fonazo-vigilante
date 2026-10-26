@@ -1,0 +1,44 @@
+name: Modo mantenimiento
+
+# Se ejecuta a mano: GitHub (web o app del celular) → Actions → "Modo mantenimiento" → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: '¿Qué hacer?'
+        type: choice
+        required: true
+        options:
+          - activar
+          - desactivar
+          - automatico
+          - estado
+          - prueba-whatsapp
+
+jobs:
+  cambiar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Enviar la orden a Fonazo
+        env:
+          URL: https://fonazo-inventario.seenode.app
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ACCION: ${{ inputs.accion }}
+        run: |
+          set -o pipefail
+          case "$ACCION" in
+            estado) RUTA=/api/mantenimiento; METODO=GET; CUERPO= ;;
+            prueba-whatsapp) RUTA=/api/mantenimiento/prueba; METODO=POST; CUERPO='{}' ;;
+            *) RUTA=/api/mantenimiento; METODO=POST; CUERPO="{\"accion\":\"$ACCION\",\"quien\":\"el bot de GitHub\"}" ;;
+          esac
+          if [ "$METODO" = GET ]; then
+            R=$(curl -sS --fail-with-body --retry 3 --retry-all-errors "$URL$RUTA")
+          else
+            R=$(curl -sS --fail-with-body --retry 3 --retry-all-errors -X POST -H "content-type: application/json" -H "x-bot-token: $BOT_TOKEN" -d "$CUERPO" "$URL$RUTA")
+          fi
+          echo "$R" | jq .
+          CERRADO=$(echo "$R" | jq -r '.cerrado // empty')
+          if [ "$CERRADO" = true ]; then echo "### 🔧 Fonazo está CERRADO / en mantenimiento" >> "$GITHUB_STEP_SUMMARY";
+          elif [ "$CERRADO" = false ]; then echo "### 🔓 Fonazo está ABIERTO" >> "$GITHUB_STEP_SUMMARY";
+          else echo "### ✅ Mensaje de prueba enviado" >> "$GITHUB_STEP_SUMMARY"; fi
