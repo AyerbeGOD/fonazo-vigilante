@@ -45,6 +45,7 @@ async function avisar(texto) {
     }
     const html = texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\*([^*\n]+)\*/g, '<b>$1</b>');
     let ok = false;
+    let motivo = '';
     for (const chat of chats) {
         for (let i = 1; i <= 3; i++) {
             try {
@@ -59,14 +60,26 @@ async function avisar(texto) {
                     ok = true;
                     break;
                 }
-                console.log(`Telegram intento ${i}: ${j.description || `HTTP ${r.status}`}`);
+                motivo = j.description || `HTTP ${r.status}`;
+                console.log(`Telegram intento ${i}: ${motivo}`);
+                if (r.status === 400 || r.status === 401 || r.status === 403 || r.status === 404) break; // reintentar no lo arregla
             } catch (err) {
+                motivo = err.message;
                 console.log(`Telegram intento ${i}: ${err.message}`);
             }
             await new Promise((r) => setTimeout(r, 5000 * i));
         }
     }
-    if (!ok) console.log('::error::No se pudo enviar el aviso por Telegram');
+    if (!ok) {
+        const pista = /not found/i.test(motivo) && !/chat/i.test(motivo)
+            ? 'el secreto TELEGRAM_TOKEN está mal copiado'
+            : /chat not found/i.test(motivo)
+              ? 'el secreto TELEGRAM_CHAT_ID está mal (debe ser 6035891298) o no le escribiste al bot'
+              : /unauthorized/i.test(motivo)
+                ? 'el TELEGRAM_TOKEN no es válido (¿lo regeneraste en BotFather?)'
+                : 'revisa los secretos TELEGRAM_TOKEN y TELEGRAM_CHAT_ID';
+        console.log(`::error::No se pudo enviar el aviso por Telegram: ${motivo} → ${pista}`);
+    }
     return ok;
 }
 
