@@ -1,1 +1,5 @@
-{ "estado": "arriba", "desde": 0 }
+{
+  "estado": "arriba",
+  "desde": 0,
+  "latido": 1793006441654
+}
